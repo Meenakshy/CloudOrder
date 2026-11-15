@@ -1,0 +1,104 @@
+{
+  "info": {
+    "name": "CloudOrder API v1",
+    "description": "REST and GraphQL requests. Set baseUrl and a Cognito access token in collection variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "accessToken", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "cursor", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": "{{baseUrl}}/health/" }
+    },
+    {
+      "name": "Create order",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('orderId', pm.response.json().id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"product_id\": \"sku-100\",\n      \"product_name\": \"Desk lamp\",\n      \"quantity\": 2,\n      \"unit_price\": \"12.50\"\n    }\n  ]\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/orders/"
+      }
+    },
+    {
+      "name": "List my orders",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/orders/?limit=20&cursor={{cursor}}"
+      }
+    },
+    {
+      "name": "Get order",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/"
+      }
+    },
+    {
+      "name": "Cancel pending order",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/cancel/"
+      }
+    },
+    {
+      "name": "Get invoice URL",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/orders/{{orderId}}/invoice/"
+      }
+    },
+    {
+      "name": "GraphQL myOrders",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"query MyOrders($limit: Int, $cursor: String) { myOrders(limit: $limit, cursor: $cursor) { nodes { id status totalAmount version items { productId productName quantity unitPrice } } nextCursor } }\",\n  \"variables\": { \"limit\": 20, \"cursor\": null }\n}"
+        },
+        "url": "{{baseUrl}}/graphql/"
+      }
+    },
+    {
+      "name": "GraphQL admin allOrders",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"query AllOrders($limit: Int, $cursor: String) { allOrders(limit: $limit, cursor: $cursor) { nodes { id customerId status totalAmount version } nextCursor } }\",\n  \"variables\": { \"limit\": 20, \"cursor\": null }\n}"
+        },
+        "url": "{{baseUrl}}/graphql/"
+      }
+    }
+  ]
+}

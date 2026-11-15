@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cloudorder
+      POSTGRES_USER: cloudorder
+      POSTGRES_PASSWORD: local-dev-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - cloudorder_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudorder -d cloudorder"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  localstack:
+    image: localstack/localstack:4
+    environment:
+      SERVICES: dynamodb,s3,events,sqs,sns,secretsmanager,stepfunctions
+      AWS_DEFAULT_REGION: us-east-1
+      GATEWAY_LISTEN: 0.0.0.0:4566
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/10-cloudorder.sh:ro
+      - cloudorder_localstack:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health >/dev/null && test -f /tmp/cloudorder-init-complete"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/cloudorder_cdk/api.Dockerfile
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"]
+    environment: &cloudorder_environment
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-only-change-this-secret}
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,api
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: cloudorder
+      DB_USER: cloudorder
+      DB_PASSWORD: local-dev-password
+      DATABASE_SSL_REQUIRE: "false"
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_S3_ENDPOINT_URL: http://localstack:4566
+      DYNAMODB_ORDER_PROCESSING_TABLE: OrderProcessing
+      EVENT_BUS_NAME: cloudorder-orders
+      INVOICE_BUCKET: cloudorder-invoices
+      SNS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:cloudorder-notifications
+      SIMULATED_OUT_OF_STOCK_PRODUCT_IDS: out-of-stock
+      SIMULATED_DECLINED_CUSTOMER_IDS: payment-declined
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  outbox:
+    build:
+      context: .
+      dockerfile: infra/cloudorder_cdk/api.Dockerfile
+    command: ["python", "-m", "workers.outbox_publisher"]
+    environment: *cloudorder_environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cloudorder_postgres:
+  cloudorder_localstack:

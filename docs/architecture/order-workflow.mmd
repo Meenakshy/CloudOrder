@@ -1,0 +1,39 @@
+stateDiagram-v2
+  direction LR
+  [*] --> PENDING: REST create
+  PENDING --> OUTBOX_RECORDED: same DB transaction
+  OUTBOX_RECORDED --> EVENT_PUBLISHED: publisher receives EventBridge ack
+  EVENT_PUBLISHED --> STARTED: SQS starter starts Standard execution
+  STARTED --> VALIDATING: idempotency claim in DynamoDB
+  VALIDATING --> INVENTORY_CHECK: order payload valid
+  INVENTORY_CHECK --> PAYMENT_CHECK: simulated inventory available
+  INVENTORY_CHECK --> REJECTED: inventory unavailable
+  PAYMENT_CHECK --> INVOICE_GENERATION: simulated payment approved
+  PAYMENT_CHECK --> REJECTED: payment declined
+  INVOICE_GENERATION --> COMPLETED: PDF in private S3; invoice key and status/version committed together
+  COMPLETED --> NOTIFICATION: SNS publish order result
+  NOTIFICATION --> SUCCEEDED: SNS publish accepted
+
+  OUTBOX_RECORDED --> PUBLISH_RETRY: EventBridge publish failed
+  PUBLISH_RETRY --> OUTBOX_RECORDED: retry with backoff
+  STARTED --> RETRYING: transient workflow task failure
+  RETRYING --> VALIDATING: retry policy permits
+  RETRYING --> FAILED: retry limit exhausted
+  EVENT_PUBLISHED --> DLQ: SQS delivery limit exhausted
+  DLQ --> OPERATIONS_ALERT: CloudWatch DLQ alarm
+  FAILED --> OPERATIONS_ALERT: failure metric and execution details
+  REJECTED --> NOTIFICATION: SNS publish rejection result
+  SUCCEEDED --> TERMINAL
+  TERMINAL --> [*]
+
+  note right of STARTED
+    DynamoDB OrderProcessing stores
+    execution state and idempotency keys.
+    Duplicate SQS deliveries do not create
+    duplicate business effects.
+  end note
+  note right of COMPLETED
+    PostgreSQL remains authoritative.
+    Every state transition checks expected
+    status and increments version.
+  end note

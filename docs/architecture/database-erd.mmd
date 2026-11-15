@@ -1,0 +1,33 @@
+erDiagram
+  orders ||--|{ order_items : contains
+  orders ||--o{ outbox_events : emits
+
+  orders {
+    uuid id PK
+    string customer_id
+    string status
+    decimal total_amount
+    bigint version
+    string invoice_s3_key "nullable"
+    timestamptz created_at
+    timestamptz updated_at
+  }
+
+  order_items {
+    bigserial id PK
+    uuid order_id FK
+    string product_id
+    string product_name
+    integer quantity
+    decimal unit_price
+  }
+
+  outbox_events {
+    bigserial id PK
+    uuid order_id FK
+    string event_type
+    jsonb payload
+    timestamptz created_at
+    timestamptz published_at "nullable"
+    integer retry_count
+  }
